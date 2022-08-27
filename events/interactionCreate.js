@@ -1,113 +1,143 @@
 const fs = require("fs")
 const config = require("../config.js");
-const { EmbedBuilder, InteractionType } = require('discord.js');
-const db = require("croxydb")
+const { EmbedBuilder, InteractionType, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+const db = require("../mongoDB");
 
 module.exports = async (client, interaction) => {
-    if (!interaction.guild) return;
-    if (interaction.type === InteractionType.ApplicationCommand) {
-        fs.readdir(config.commandsDir, (err, files) => {
-            if (err) throw err;
-            files.forEach(async (f) => {
-                let props = require(`.${config.commandsDir}/${f}`);
-                if (interaction.commandName.toLowerCase() === props.name.toLowerCase()) {
-                    try {
-                        if (interaction.member.permissions.has(props?.permissions || "0x0000000000000800")) {
-                            const DJ = client.config.opt.DJ;
-                            if (props && DJ.commands.includes(interaction.commandName)) {
-                                let djRole = await db.get(`dj-${interaction.guild.id}`)
-                                if (djRole) {
-                                    const roleDJ = interaction.guild.roles.cache.get(djRole)
-                                    if (!interaction.member.permissions.has("0x0000000000000020")) {
-                                        if (roleDJ) {
-                                            if (!interaction.member.roles.cache.has(roleDJ.id)) {
+let lang = client.language
+if (!interaction.guild) return;
+if (interaction.type === InteractionType.ApplicationCommand) {
+fs.readdir(config.commandsDir, (err, files) => {
+if (err) throw err;
+files.forEach(async (f) => {
+let props = require(`.${config.commandsDir}/${f}`);
+if (interaction.commandName.toLowerCase() === props.name.toLowerCase()) {
+try {
+if (interaction.member.permissions.has(props?.permissions || "0x0000000000000800")) {
+const DJ = client.config.opt.DJ;
+if (props && DJ.commands.includes(interaction.commandName)) {
+let djRole = await db.musicbot.findOne({ guildID: interaction.guild.id }).catch(e => { });
+if (djRole) {
+const roleDJ = interaction.guild.roles.cache.get(djRole.role)
+if (!interaction.member.permissions.has("0x0000000000000020")) {
+if (roleDJ) {
+if (!interaction.member.roles.cache.has(roleDJ.id)) {
 
-                                                const embed = new EmbedBuilder()
-                                                    .setColor('007fff')
-                                                    .setTitle(client.user.username)
-                                                    .setThumbnail(client.user.displayAvatarURL())
-                                                    .setDescription("You must have the <@&" + djRole + ">(DJ) role set on this server to use this command. Users without this role cannot use the " + client.config.opt.DJ.commands.map(astra => '`' + astra + '`').join(", "))
-                                                    .setTimestamp()
-                                                    .setFooter({ text: `Code Share - by Umut Bayraktar ❤️` })
-                                                return interaction.reply({ embeds: [embed], ephemeral: true }).catch(e => { })
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            if (props && props.voiceChannel) {
-                                if (!interaction.member.voice.channelId) return interaction.reply({ content: `You are not connected to an audio channel. ❌`, ephemeral: true }).catch(e => { })
-                                const guild_me = interaction.guild.members.cache.get(client.user.id);
-                                if (guild_me.voice.channelId) {
-                                    if (guild_me.voice.channelId !== interaction.member.voice.channelId) {
-                                        return interaction.reply({ content: `You are not on the same audio channel as me. ❌`, ephemeral: true }).catch(e => { })
-                                    }
-                                }
-                            }
-                            return props.run(client, interaction);
+const embed = new EmbedBuilder()
+.setColor('007fff')
+.setTitle(client.user.username)
+.setThumbnail(client.user.displayAvatarURL())
+.setDescription(lang.embed1.replace("{djRole}", roleDJ.id).replace("{cmdMAP}", client.config.opt.DJ.commands.map(astra => '`' + astra + '`').join(", ")))
+.setTimestamp()
+.setFooter({ text: `codeshare.me | Umut Bayraktar ❤️` })
+return interaction.reply({ embeds: [embed], ephemeral: true }).catch(e => { })
+}
+}
+}
+}
+}
+if (props && props.voiceChannel) {
+if (!interaction.member.voice.channelId) return interaction.reply({ content: `${lang.message1}`, ephemeral: true }).catch(e => { })
+const guild_me = interaction.guild.members.cache.get(client.user.id);
+if (guild_me.voice.channelId) {
+if (guild_me.voice.channelId !== interaction.member.voice.channelId) {
+return interaction.reply({ content: `${lang.message2}`, ephemeral: true }).catch(e => { })
+}
+}
+}
+return props.run(client, interaction);
 
-                        } else {
-                            return interaction.reply({ content: `Missing permission: **${props?.permissions}**`, ephemeral: true });
-                        }
-                    } catch (e) {
-                        console.log(e);
-                        return interaction.reply({ content: `Something went wrong...\n\n\`\`\`${e.message}\`\`\``, ephemeral: true });
-                    }
-                }
-            });
-        });
-    }
+} else {
+return interaction.reply({ content: `${lang.message3}: **${props?.permissions}**`, ephemeral: true });
+}
+} catch (e) {
+console.log(e);
+return interaction.reply({ content: `${lang.msg4}...\n\n\`\`\`${e.message}\`\`\``, ephemeral: true });
+}
+}
+});
+});
+}
 
-    if (interaction.type === InteractionType.MessageComponent) {
-        const queue = client.player.getQueue(interaction.guildId);
-        switch (interaction.customId) {
-            case 'saveTrack': {
-                if (!queue || !queue.playing) {
-                    return interaction.reply({ content: `No music currently playing. ❌`, embeds: [], components: [], ephemeral: true }).catch(e => { })
-                } else {
-                    const embed = new EmbedBuilder()
-                        .setColor('007fff')
-                        .setTitle(client.user.username + " - Save Track")
-                        .setThumbnail(client.user.displayAvatarURL())
-                        .addFields([
-                            { name: `Track`, value: `\`${queue.current.title}\`` },
-                            { name: `Duration`, value: `\`${queue.current.duration}\`` },
-                            { name: `URL`, value: `${queue.current.url}` },
-                            { name: `Saved Server`, value: `\`${interaction.guild.name}\`` },
-                            { name: `Requested By`, value: `${queue.current.requestedBy}` }
-                        ])
-                        .setTimestamp()
-                        .setFooter({ text: `Code Share - by Umut Bayraktar ❤️` })
-                    interaction.member.send({ embeds: [embed] }).then(() => {
-                        return interaction.reply({ content: `I sent you the name of the music in a private message ✅`, embeds: [], components: [], ephemeral: true }).catch(e => { })
-                    }).catch(error => {
-                        return interaction.reply({ content: `I can't send you a private message. ❌`, embeds: [], components: [], ephemeral: true }).catch(e => { })
-                    });
-                }
-            }
-                break
-            case 'time': {
-                if (!queue || !queue.playing) {
-                    return interaction.reply({ content: `No music currently playing. ❌`, embeds: [], components: [], ephemeral: true }).catch(e => { })
-                } else {
+if (interaction.type === InteractionType.MessageComponent) {
+const queue = client.player.getQueue(interaction.guildId);
+switch (interaction.customId) {
+case 'saveTrack': {
+if (!queue || !queue.playing) {
+return interaction.reply({ content: `${lang.msg5}`, embeds: [], components: [], ephemeral: true }).catch(e => { })
+} else {
 
-                    const progress = queue.createProgressBar();
-                    const timestamp = queue.getPlayerTimestamp();
+const Modal = new ModalBuilder()
+.setCustomId("playlistModal")
+.setTitle(lang.msg6)
 
-                    if (timestamp.progress == 'Infinity') return interaction.message.edit({ content: `This song is live streaming, no duration data to display. 🎧`, embeds: [], components: [] }).catch(e => { })
+const PlayList = new TextInputBuilder()
+.setCustomId("playlist")
+.setLabel(lang.msg7)
+.setRequired(true)
+.setStyle(TextInputStyle.Short)
 
-                    const embed = new EmbedBuilder()
-                        .setColor('007fff')
-                        .setTitle(queue.current.title)
-                        .setThumbnail(client.user.displayAvatarURL())
-                        .setTimestamp()
-                        .setDescription(`${progress} (**${timestamp.progress}**%)`)
-                        .setFooter({ text: `Code Share - by Umut Bayraktar ❤️` })
-                    interaction.message.edit({ embeds: [embed] }).catch(e => { })
-                    interaction.reply({ content: `**✅ Success:** Time data updated. `, embeds: [], components: [], ephemeral: true }).catch(e => { })
-                }
-            }
+const PlaylistRow = new ActionRowBuilder().addComponents(PlayList);
+
+Modal.addComponents(PlaylistRow)
+
+await interaction.showModal(Modal).catch(e => {})
+}
+}
+break
+case 'time': {
+if (!queue || !queue.playing) {
+return interaction.reply({ content: `${lang.msg5}`, embeds: [], components: [], ephemeral: true }).catch(e => { })
+} else {
+
+const progress = queue.createProgressBar();
+const timestamp = queue.getPlayerTimestamp();
+
+if (timestamp.progress == 'Infinity') return interaction.message.edit({ content: `${lang.msg8}`, embeds: [], components: [] }).catch(e => { })
+
+const embed = new EmbedBuilder()
+.setColor('007fff')
+.setTitle(queue.current.title)
+.setThumbnail(client.user.displayAvatarURL())
+.setTimestamp()
+.setDescription(`${progress} (**${timestamp.progress}**%)`)
+.setFooter({ text: `codeshare.me | Umut Bayraktar ❤️` })
+interaction.message.edit({ embeds: [embed] }).catch(e => { })
+interaction.reply({ content: `${lang.msg9}`, embeds: [], components: [], ephemeral: true }).catch(e => { })
+}
+}
+}
+}
+
+
+if (interaction.type === InteractionType.ModalSubmit) {
+    switch (interaction.customId) {
+        case 'playlistModal': {
+    const queue = client.player.getQueue(interaction.guildId);
+    if (!queue || !queue.playing) return interaction.reply({ content: `${lang.msg5}`, embeds: [], components: [], ephemeral: true }).catch(e => { })
+
+    const name = interaction.fields.getTextInputValue("playlist")
+    
+    const playlist = await db.playlist.findOne({ userID: interaction.user.id }).catch(e => { })
+    if(!playlist?.playlist?.filter(p => p.name === name).length > 0) return interaction.reply({ content: `${lang.msg10}`, ephemeral: true }).catch(e => { })
+    
+    const music_filter = playlist?.musics?.filter(m => m.playlist_name === name && m.music_name === queue.current.title)
+    if(music_filter?.length > 0) return interaction.reply({ content: `${lang.msg11}`, ephemeral: true }).catch(e => { })
+    
+    await db.playlist.updateOne({ userID: interaction.user.id }, {
+        $push: {
+        musics: {
+        playlist_name: name,
+        music_name: queue.current.title,
+        music_url: queue.current.url,
+        saveTime: Date.now()
         }
+        }}, { upsert: true }).catch(e => { })
+    
+        return interaction.reply(`<@${interaction.user.id}>, **${queue.current.title}** ${lang.msg12}`)
     }
+    break
+}
+}
 
 }
